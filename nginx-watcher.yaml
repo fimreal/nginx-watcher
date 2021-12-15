@@ -1,0 +1,42 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      name: nginx
+      labels:
+        app: nginx
+    spec:
+
+      # add this section
+      shareProcessNamespace: true
+      containers:
+        - name: nginx-watcher
+          image: epurs/watcher:nginx
+          imagePullPolicy: Always
+          env:
+            - name: NGINX_CONFDIR
+              value: /etc/nginx/conf.d
+          volumeMounts:
+          - name: nginx-confd
+            mountPath: /etc/nginx/conf.d
+            readOnly: true
+
+
+        - name: nginx
+          image: nginx
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: nginx-confd
+              mountPath: /etc/nginx/conf.d
+      volumes:
+      - name: nginx-confd
+        configMap:
+          name: nginx-config

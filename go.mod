@@ -1,4 +1,4 @@
-module github.com/fimreal/reload-nginx-with-fsnotify
+module github.com/fimreal/nginx-watcher
 
 go 1.17
 

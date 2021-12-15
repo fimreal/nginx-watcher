@@ -13,20 +13,27 @@ import (
 )
 
 const (
-	ngx_conf_dir_env_name     = "nginx_Confdir"
+	ngx_conf_dir_env_name     = "NGINX_CONFDIR"
 	default_ngx_conf_dir_name = "/etc/nginx/"
 )
 
 func main() {
 	// 获取环境变量作为监控路径
 	path, ok := os.LookupEnv(ngx_conf_dir_env_name)
-	if !ok {
+	if ok {
+		ezap.Infof("获取到环境变量配置[%s]: %s", ngx_conf_dir_env_name, path)
+	} else {
 		path = default_ngx_conf_dir_name
 	}
 	watchConfigFile(path)
 }
 
-func reloadNginx() {
+func reloadNginx(done chan bool) {
+	// 避免频繁执行 reload，限制 10s 一次
+	ezap.Info("等待 10s 后执行 reload")
+	time.Sleep(10 * time.Second)
+	defer func() { done <- true }()
+
 	pid, err := getPid()
 	if err != nil {
 		ezap.Error(err)
@@ -59,8 +66,11 @@ func watchConfigFile(path string) {
 	}
 	defer watcher.Close()
 
-	done := make(chan bool)
+	done := make(chan bool, 1)
+	done <- true
+
 	go func() {
+		ezap.Info("开始监控配置文件改动")
 		defer close(done)
 
 		for {
@@ -69,10 +79,12 @@ func watchConfigFile(path string) {
 				if !ok {
 					return
 				}
-				ezap.Info("监控发现文件改动, ", event.Name, " ", event.Op, ", 等待 10s 后自动 reload 配置")
-				time.Sleep(10 * time.Second)
+				ezap.Info("监控发现文件改动, ", event.Name, " ", event.Op)
 				if event.Op&fsnotify.Create != fsnotify.Create {
-					reloadNginx()
+					if len(done) == 1 {
+						<-done
+						go reloadNginx(done)
+					}
 				}
 			case err, ok := <-watcher.Errors:
 				if !ok {
@@ -83,12 +95,6 @@ func watchConfigFile(path string) {
 		}
 	}()
 
-	// for _, file := range path {
-	// 	err = watcher.Add(file)
-	// 	if err != nil {
-	// 		ezap.Fatal("Add failed:", err)
-	// 	}
-	// }
 	err = watcher.Add(path)
 	if err != nil {
 		ezap.Fatal("Add failed:", err)
@@ -111,6 +117,7 @@ func watchConfigFile(path string) {
 		}
 		return nil
 	})
+	ezap.Info("初始化完成")
 
-	<-done
+	select {}
 }
